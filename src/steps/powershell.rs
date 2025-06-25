@@ -76,9 +76,7 @@ impl Powershell {
     /// {powershell} -NoProfile -Command {cmd}
     fn build_command<'a>(&self, ctx: &'a ExecutionContext, cmd: &str, use_sudo: bool) -> Result<impl CommandExt + 'a> {
         let mut command = if use_sudo && ctx.sudo().is_some() {
-            let mut cmd = ctx.execute(ctx.sudo().as_ref().unwrap());
-            cmd.arg(&self.path);
-            cmd
+            ctx.sudo().as_ref().unwrap().execute(ctx, &self.path)?
         } else {
             ctx.execute(&self.path)
         };
