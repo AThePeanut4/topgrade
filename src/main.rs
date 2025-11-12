@@ -3,12 +3,14 @@
 use std::env;
 use std::io;
 use std::path::PathBuf;
-use std::process::exit;
+use std::process::ExitCode;
 use std::time::Duration;
 
 use crate::breaking_changes::{first_run_of_major_release, print_breaking_changes, should_skip, write_keep_file};
 use clap::CommandFactory;
 use clap::{crate_version, Parser};
+use color_eyre::eyre::bail;
+use color_eyre::eyre::eyre;
 use color_eyre::eyre::Context;
 use color_eyre::eyre::Result;
 use console::Key;
@@ -22,7 +24,7 @@ use std::sync::LazyLock;
 use tracing::debug;
 
 use self::config::{CommandLineArgs, Config};
-use self::error::StepFailed;
+use self::error::ExitError;
 use self::runner::StepResult;
 #[allow(clippy::wildcard_imports)]
 use self::steps::{remote::*, *};
@@ -64,7 +66,13 @@ fn run() -> Result<()> {
     install_color_eyre()?;
     ctrlc::set_handler();
 
-    let opt = CommandLineArgs::parse();
+    let opt = CommandLineArgs::try_parse().map_err(|e| {
+        // from `clap::Error::exit`
+        // Swallow broken pipe errors
+        let _ = e.print();
+        ExitError((e.exit_code() as u8).into())
+    })?;
+
     // Set up the logger with the filter directives from:
     //     1. CLI option `--log-filter`
     //     2. `debug` if the `--verbose` option is present
@@ -142,7 +150,7 @@ fn run() -> Result<()> {
             "Topgrade should not be run as root, it will run commands with sudo or equivalent where needed."
         ));
         if !prompt_yesno(&t!("Continue?"))? {
-            exit(1)
+            bail!(ExitError::FAILURE);
         }
     }
 
@@ -183,7 +191,7 @@ fn run() -> Result<()> {
         if prompt_yesno(&t!("Continue?"))? {
             write_keep_file()?;
         } else {
-            exit(1);
+            bail!(ExitError::FAILURE);
         }
     }
 
@@ -311,23 +319,24 @@ fn run() -> Result<()> {
     }
 
     if failed {
-        Err(StepFailed.into())
+        Err(eyre!(ExitError::FAILURE))
     } else {
         Ok(())
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
     match run() {
-        Ok(()) => {
-            exit(0);
-        }
+        Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            let skip_print = (error.downcast_ref::<StepFailed>().is_some())
-                || (error
-                    .downcast_ref::<io::Error>()
-                    .filter(|io_error| io_error.kind() == io::ErrorKind::Interrupted)
-                    .is_some());
+            if let Some(error) = error.downcast_ref::<ExitError>() {
+                return error.0;
+            }
+
+            let skip_print = error
+                .downcast_ref::<io::Error>()
+                .filter(|io_error| io_error.kind() == io::ErrorKind::Interrupted)
+                .is_some();
 
             if !skip_print {
                 // The `Debug` implementation of `eyre::Result` prints a multi-line
@@ -335,7 +344,8 @@ fn main() {
                 // `.with_context(...)` calls.
                 println!("{}", t!("Error: {error}", error = format!("{:?}", error)));
             }
-            exit(1);
+
+            ExitCode::FAILURE
         }
     }
 }

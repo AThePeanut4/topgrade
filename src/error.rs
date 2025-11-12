@@ -1,9 +1,23 @@
-use std::{fmt::Display, process::ExitStatus};
+use std::fmt::Display;
+use std::process::{ExitCode, ExitStatus};
 
 use rust_i18n::t;
 use thiserror::Error;
 
 use crate::sudo::SudoKind;
+
+#[derive(Error, Debug, PartialEq)]
+pub struct ExitError(pub ExitCode);
+
+impl ExitError {
+    pub const FAILURE: ExitError = ExitError(ExitCode::FAILURE);
+}
+
+impl Display for ExitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed with exit code {:?}", self.0)
+    }
+}
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum TopgradeError {

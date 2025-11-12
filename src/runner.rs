@@ -88,7 +88,7 @@ impl<'a> Runner<'a> {
                     break;
                 }
                 Err(e) => {
-                    debug!("Step {:?} failed: {:?}", key, e);
+                    debug!("Step {:?} failed: {:#?}", key, e);
                     let interrupted = ctrlc::interrupted();
                     if interrupted {
                         ctrlc::unset_interrupted();

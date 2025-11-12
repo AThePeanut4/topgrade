@@ -5,7 +5,6 @@ use std::os::unix::process::CommandExt as _;
 use std::process::exit;
 use std::process::Command;
 
-use crate::step::Step;
 #[cfg(unix)]
 use color_eyre::eyre::bail;
 use color_eyre::eyre::Result;
@@ -15,6 +14,7 @@ use self_update_crate::update::UpdateStatus;
 
 use super::terminal::{print_info, print_separator};
 use crate::execution_context::ExecutionContext;
+use crate::step::Step;
 
 pub fn self_update(ctx: &ExecutionContext) -> Result<()> {
     print_separator(t!("Self update"));
@@ -44,29 +44,29 @@ pub fn self_update(ctx: &ExecutionContext) -> Result<()> {
             if let Some(body) = &release.body {
                 println!("{body}");
             }
+
+            print_info(t!("Respawning..."));
+            let mut command = Command::new(current_exe?);
+            command.args(env::args().skip(1)).env("TOPGRADE_NO_SELF_UPGRADE", "");
+
+            #[cfg(unix)]
+            {
+                let err = command.exec();
+                bail!(err);
+            }
+
+            #[cfg(windows)]
+            {
+                #[allow(clippy::disallowed_methods)]
+                let status = command.status()?;
+                // TODO: ideally we would return an `ExitError` here rather than use
+                // `process::exit`, since that would allow destructors to run.
+                // But to losslessly convert a code into an `ExitCode` we need
+                // `std::os::windows::process::ExitCodeExt`, which is currently unstable.
+                exit(status.code().expect("This cannot return None on Windows"));
+            }
         } else {
             println!("{}", t!("Topgrade is up-to-date"));
-        }
-
-        {
-            if result.updated() {
-                print_info(t!("Respawning..."));
-                let mut command = Command::new(current_exe?);
-                command.args(env::args().skip(1)).env("TOPGRADE_NO_SELF_UPGRADE", "");
-
-                #[cfg(unix)]
-                {
-                    let err = command.exec();
-                    bail!(err);
-                }
-
-                #[cfg(windows)]
-                {
-                    #[allow(clippy::disallowed_methods)]
-                    let status = command.status()?;
-                    exit(status.code().expect("This cannot return None on Windows"));
-                }
-            }
         }
 
         Ok(())

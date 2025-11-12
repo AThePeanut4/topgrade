@@ -167,7 +167,7 @@ impl CommandExt for Command {
         #[allow(clippy::disallowed_methods)]
         let output = self
             .output()
-            .with_context(|| format!("Failed to execute `{command}`"))?;
+            .wrap_err_with(|| format!("Failed to execute `{command}`"))?;
 
         if succeeded(&output).is_ok() {
             Ok(output)
@@ -186,44 +186,45 @@ impl CommandExt for Command {
             }
 
             let (program, _) = get_program_and_args(self);
-            let err = TopgradeError::ProcessFailedWithOutput(program, output.status, stderr.into_owned());
-
-            let ret = Err(err).with_context(|| message);
-            debug!("Command failed: {ret:?}");
-            ret
+            let err = eyre!(TopgradeError::ProcessFailedWithOutput(
+                program,
+                output.status,
+                stderr.into_owned()
+            ))
+            .wrap_err(message);
+            debug!("Command failed: {err:#?}");
+            Err(err)
         }
     }
 
     fn status_checked_with(&mut self, succeeded: impl Fn(ExitStatus) -> Result<(), ()>) -> eyre::Result<()> {
         let command = log(self);
-        let message = format!("Failed to execute `{command}`");
 
         // This is where we implement `status_checked`, which is what we prefer to use instead of
         // `status`, so we allow `Command::status` here.
         #[allow(clippy::disallowed_methods)]
-        let status = self.status().with_context(|| message.clone())?;
+        let status = self
+            .status()
+            .wrap_err_with(|| format!("Failed to execute `{command}`"))?;
 
         if succeeded(status).is_ok() {
             Ok(())
         } else {
             let (program, _) = get_program_and_args(self);
-            let err = TopgradeError::ProcessFailed(program, status);
-            let ret = Err(err).with_context(|| format!("Command failed: `{command}`"));
-            debug!("Command failed: {ret:?}");
-            ret
+            let err =
+                eyre!(TopgradeError::ProcessFailed(program, status)).wrap_err(format!("Command failed: `{command}`"));
+            debug!("Command failed: {err:#?}");
+            Err(err)
         }
     }
 
     fn spawn_checked(&mut self) -> eyre::Result<Self::Child> {
         let command = log(self);
-        let message = format!("Failed to execute `{command}`");
 
         // This is where we implement `spawn_checked`, which is what we prefer to use instead of
         // `spawn`, so we allow `Command::spawn` here.
         #[allow(clippy::disallowed_methods)]
-        {
-            self.spawn().with_context(|| message.clone())
-        }
+        self.spawn().wrap_err_with(|| format!("Failed to execute `{command}`"))
     }
 }
 
